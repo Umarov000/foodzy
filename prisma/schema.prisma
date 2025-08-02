@@ -1,0 +1,242 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ENUMS
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  ON_THE_WAY
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CARD
+  CASH
+  CLICK
+  PAYME
+  OTHER
+}
+
+enum PromoType {
+  PERCENT
+  FIXED
+}
+
+enum RoleValue {
+  USER
+  COURIER
+  OPERATOR
+  ADMIN
+}
+
+enum SupportStatus {
+  OPEN
+  PENDING
+  RESOLVED
+  CLOSED
+}
+
+model Admins {
+  id             Int     @id @default(autoincrement())
+  fullName       String
+  email          String  @unique
+  password       String
+  isActive       Boolean @default(true)
+  isCreator      Boolean @default(true)
+  refreshToken  String?
+  passwordToken  String?
+}
+
+model Users {
+  id       Int        @id @default(autoincrement())
+  fullName String
+  email    String     @unique
+  phone    String?
+  password String
+  role     RoleValue?
+
+  isActive       Boolean? @default(false)
+  isPremium      Boolean? @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  refreshToken   String?
+  activationLink String   @unique @default(uuid())
+  passwordToken  String?
+
+  addresses        Address[]
+  ordersAsCustomer Orders[]          @relation("CustomerOrders")
+  ordersAsCourier  Orders[]          @relation("CourierOrders")
+  reviews          Review[]
+  notifications    Notification[]
+  courierLocation  CourierLocation[]
+  supports         Support[]
+
+  @@map("users")
+}
+
+model Address {
+  id     Int     @id @default(autoincrement())
+  userId Int
+  title  String
+  street String
+  house  String
+  flat   String?
+  lat    Float
+  lng    Float
+
+  user   Users    @relation(fields: [userId], references: [id])
+  Orders Orders[]
+
+  @@map("address")
+}
+
+model Category {
+  id   Int    @id @default(autoincrement())
+  name String
+
+  restaurants Restaurant[]
+
+  @@map("category")
+}
+
+model Restaurant {
+  id          Int    @id @default(autoincrement())
+  name        String
+  image       String
+  description String
+  categoryId  Int
+
+  category Category @relation(fields: [categoryId], references: [id])
+  meals    Meal[]
+  promos   Promo[]
+
+  @@map("restaurant")
+}
+
+model Meal {
+  id           Int         @id @default(autoincrement())
+  name         String
+  description  String
+  price        Decimal
+  image        String
+  restaurantId Int
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id])
+  orderItems   OrderItem[]
+  reviews      Review[]
+
+  @@map("meal")
+}
+
+model Orders {
+  id            Int           @id @default(autoincrement())
+  customerId    Int
+  courierId     Int?
+  addressId     Int
+  status        OrderStatus
+  paymentStatus PaymentStatus
+  paymentMethod PaymentMethod
+  total         Decimal
+  createdAt     DateTime      @default(now())
+
+  customer Users       @relation("CustomerOrders", fields: [customerId], references: [id])
+  courier  Users?      @relation("CourierOrders", fields: [courierId], references: [id])
+  address  Address     @relation(fields: [addressId], references: [id])
+  items    OrderItem[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id       Int @id @default(autoincrement())
+  orderId  Int
+  mealId   Int
+  quantity Int
+
+  order Orders @relation(fields: [orderId], references: [id])
+  meal  Meal   @relation(fields: [mealId], references: [id])
+
+  @@map("order_item")
+}
+
+model Review {
+  id      Int     @id @default(autoincrement())
+  userId  Int
+  mealId  Int
+  rating  Int
+  comment String?
+
+  user Users @relation(fields: [userId], references: [id])
+  meal Meal  @relation(fields: [mealId], references: [id])
+
+  @@map("review")
+}
+
+model Promo {
+  id           Int       @id @default(autoincrement())
+  code         String    @unique
+  discount     Decimal
+  type         PromoType
+  restaurantId Int?
+
+  restaurant Restaurant? @relation(fields: [restaurantId], references: [id])
+
+  @@map("promo")
+}
+
+model Notification {
+  id     Int     @id @default(autoincrement())
+  userId Int
+  title  String
+  body   String
+  isRead Boolean @default(false)
+
+  user Users @relation(fields: [userId], references: [id])
+
+  @@map("notification")
+}
+
+model CourierLocation {
+  id        Int      @id @default(autoincrement())
+  courierId Int
+  lat       Float
+  lng       Float
+  updatedAt DateTime @updatedAt
+
+  courier Users @relation(fields: [courierId], references: [id])
+
+  @@map("courier_location")
+}
+
+model Support {
+  id        Int           @id @default(autoincrement())
+  userId    Int
+  message   String
+  status    SupportStatus
+  createdAt DateTime      @default(now())
+
+  user Users @relation(fields: [userId], references: [id])
+
+  @@map("support")
+}
