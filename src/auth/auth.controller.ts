@@ -22,11 +22,26 @@ import { RolesGuard } from "../common/guards/roles.guard";
 import { Roles } from "../common/decorators";
 import { ForgotPasswordDto } from "../users/dto/forgot-password.dto";
 import { ResetPasswordDto } from "../users/dto/reset-password.dto";
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from "@nestjs/swagger";
 
+@ApiTags("Avtorizatsiya")
 @Controller("auth")
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Admin tomonidan foydalanuvchi ro'yxatdan o'tkazish",
+  })
+  @ApiResponse({
+    status: 201,
+    description: "Foydalanuvchi muvaffaqiyatli ro'yxatdan o'tkazildi",
+  })
   @Roles("ADMIN", "SUPERADMIN")
   @UseGuards(RolesGuard)
   @UseGuards(AuthGuardJwt)
@@ -35,11 +50,18 @@ export class AuthController {
     return this.authService.register(createUserDto, req);
   }
 
+  @ApiOperation({ summary: "Foydalanuvchi tomonidan ro'yxatdan o'tish" })
+  @ApiResponse({
+    status: 201,
+    description: "Ro'yxatdan o'tish muvaffaqiyatli bajarildi",
+  })
   @Post("signup")
   signup(@Body() createUserDto: CreateUserDto) {
     return this.authService.signup(createUserDto);
   }
 
+  @ApiOperation({ summary: "Foydalanuvchi tizimga kirishi (login)" })
+  @ApiResponse({ status: 200, description: "Login muvaffaqiyatli bajarildi" })
   @HttpCode(200)
   @Post("signin")
   signin(
@@ -49,13 +71,18 @@ export class AuthController {
     return this.authService.signin(signinUserDto, res);
   }
 
+  @ApiOperation({
+    summary: "Emailni tasdiqlash havolasi orqali faollashtirish",
+  })
   @Get("activate/:link")
   async activate(@Param("link") activationLink: string) {
     return this.authService.activate(activationLink);
   }
 
-  @UseGuards(AuthGuardJwt)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Foydalanuvchini tizimdan chiqishi (logout)" })
   @HttpCode(200)
+  @UseGuards(AuthGuardJwt)
   @Post("logout")
   logout(
     @CookieGetter("refreshToken") refreshToken: string,
@@ -64,8 +91,10 @@ export class AuthController {
     return this.authService.logout(refreshToken, res);
   }
 
-  @UseGuards(AuthGuardJwt)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Tokenni yangilash (refresh)" })
   @HttpCode(200)
+  @UseGuards(AuthGuardJwt)
   @Post("refresh")
   async refreshToken(
     @Req() req: Request,
@@ -74,6 +103,8 @@ export class AuthController {
     return this.authService.refresh(req, res);
   }
 
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Joriy foydalanuvchi ma'lumotlarini olish" })
   @UseGuards(AuthGuardJwt)
   @Get("profile")
   me(@Req() req: Request) {
@@ -81,6 +112,8 @@ export class AuthController {
     return this.authService.getMe(userId);
   }
 
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Profilni tahrirlash" })
   @UseGuards(AuthGuardJwt)
   @Patch("profile")
   updateMe(@Body() updateMeDto: UpdateProfileDto, @Req() req: Request) {
@@ -88,15 +121,21 @@ export class AuthController {
     return this.authService.updateMe(userId, updateMeDto);
   }
 
-  @UseGuards(AuthGuardJwt)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Parolni unutgan foydalanuvchilar uchun reset so‘rovi",
+  })
   @HttpCode(200)
+  @UseGuards(AuthGuardJwt)
   @Post("forgot-password")
   forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
     return this.authService.forgotPassword(forgotPasswordDto);
   }
 
-  @UseGuards(AuthGuardJwt)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Yangi parol o‘rnatish" })
   @HttpCode(200)
+  @UseGuards(AuthGuardJwt)
   @Post("reset-password")
   resetPassword(
     @Body() resetPasswordDto: ResetPasswordDto,
@@ -106,8 +145,10 @@ export class AuthController {
     return this.authService.resetPassword(userId, resetPasswordDto);
   }
 
-  @UseGuards(AuthGuardJwt)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Tasdiqlovchi kod orqali parolni tiklash" })
   @HttpCode(200)
+  @UseGuards(AuthGuardJwt)
   @Post("confirm-password")
   resetForgotPassword(
     @Body("otpCode") otpCode: string,
