@@ -6,7 +6,6 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
 }
 
 datasource db {
@@ -49,6 +48,8 @@ enum RoleValue {
   COURIER
   OPERATOR
   ADMIN
+  SUPERADMIN
+  MANAGER
 }
 
 enum SupportStatus {
@@ -56,17 +57,6 @@ enum SupportStatus {
   PENDING
   RESOLVED
   CLOSED
-}
-
-model Admins {
-  id             Int     @id @default(autoincrement())
-  fullName       String
-  email          String  @unique
-  password       String
-  isActive       Boolean @default(true)
-  isCreator      Boolean @default(true)
-  refreshToken  String?
-  passwordToken  String?
 }
 
 model Users {
@@ -89,22 +79,40 @@ model Users {
   ordersAsCustomer Orders[]          @relation("CustomerOrders")
   ordersAsCourier  Orders[]          @relation("CourierOrders")
   reviews          Review[]
-  notifications    Notification[]
   courierLocation  CourierLocation[]
-  supports         Support[]
+  CourierStats     CourierStats[]
 
   @@map("users")
 }
 
+model CourierStats {
+  id        Int   @id @default(autoincrement())
+  courierId Int   @unique
+  orders    Int
+  earnings  Float
+
+  courier Users @relation(fields: [courierId], references: [id])
+}
+
+model CourierLocation {
+  id        Int      @id @default(autoincrement())
+  courierId Int
+  lat       Float
+  lng       Float
+  updatedAt DateTime @updatedAt
+
+  courier Users @relation(fields: [courierId], references: [id])
+
+  @@map("courier_location")
+}
+
 model Address {
-  id     Int     @id @default(autoincrement())
-  userId Int
-  title  String
-  street String
-  house  String
-  flat   String?
-  lat    Float
-  lng    Float
+  id          Int     @id @default(autoincrement())
+  userId      Int
+  title       String
+  fullAddress String
+  lat         String?
+  lng         String?
 
   user   Users    @relation(fields: [userId], references: [id])
   Orders Orders[]
@@ -112,25 +120,13 @@ model Address {
   @@map("address")
 }
 
-model Category {
-  id   Int    @id @default(autoincrement())
-  name String
-
-  restaurants Restaurant[]
-
-  @@map("category")
-}
-
 model Restaurant {
-  id          Int    @id @default(autoincrement())
+  id          Int     @id @default(autoincrement())
   name        String
   image       String
   description String
-  categoryId  Int
-
-  category Category @relation(fields: [categoryId], references: [id])
-  meals    Meal[]
-  promos   Promo[]
+  meals       Meal[]
+  promos      Promo[]
 
   @@map("restaurant")
 }
@@ -142,6 +138,7 @@ model Meal {
   price        Decimal
   image        String
   restaurantId Int
+  isAvailable  Boolean
   restaurant   Restaurant  @relation(fields: [restaurantId], references: [id])
   orderItems   OrderItem[]
   reviews      Review[]
@@ -205,38 +202,5 @@ model Promo {
   @@map("promo")
 }
 
-model Notification {
-  id     Int     @id @default(autoincrement())
-  userId Int
-  title  String
-  body   String
-  isRead Boolean @default(false)
 
-  user Users @relation(fields: [userId], references: [id])
 
-  @@map("notification")
-}
-
-model CourierLocation {
-  id        Int      @id @default(autoincrement())
-  courierId Int
-  lat       Float
-  lng       Float
-  updatedAt DateTime @updatedAt
-
-  courier Users @relation(fields: [courierId], references: [id])
-
-  @@map("courier_location")
-}
-
-model Support {
-  id        Int           @id @default(autoincrement())
-  userId    Int
-  message   String
-  status    SupportStatus
-  createdAt DateTime      @default(now())
-
-  user Users @relation(fields: [userId], references: [id])
-
-  @@map("support")
-}

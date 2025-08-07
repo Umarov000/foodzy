@@ -1,27 +1,41 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
-import { CreateUserDto } from "./dto/create-user.dto";
+import { Injectable, NotFoundException } from "@nestjs/common";
+import { PrismaService } from "src/prisma/prisma.service";
 import { UpdateUserDto } from "./dto/update-user.dto";
-import { PrismaService } from "../prisma/prisma.service";
-import { RoleValue, Users } from "../../generated/prisma";
 
 @Injectable()
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
-  
 
-  findAll() {
-    return `This action returns all users`;
+  async findAll() {
+    return this.prisma.users.findMany();
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} user`;
+  async findOne(id: number) {
+    const user = await this.prisma.users.findUnique({
+      where: { id },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`Foydalanuvchi topilmadi (id: ${id})`);
+    }
+
+    return user;
   }
 
-  update(id: number, updateUserDto: UpdateUserDto) {
-    return `This action updates a #${id} user`;
+  async update(id: number, dto: UpdateUserDto) {
+    const user = await this.findOne(id);
+
+    return this.prisma.users.update({
+      where: { id },
+      data: dto,
+    });
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} user`;
+  async remove(id: number) {
+    const user = await this.findOne(id);
+
+    return this.prisma.users.delete({
+      where: { id },
+    });
   }
 }

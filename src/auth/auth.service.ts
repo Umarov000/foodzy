@@ -3,6 +3,8 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  NotFoundException,
+  Req,
   ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -12,11 +14,16 @@ import { MailService } from "../mail/mail.service";
 import * as bcrypt from "bcrypt";
 import { Request, Response } from "express";
 import { PrismaService } from "../prisma/prisma.service";
-import { Users } from "../../generated/prisma";
 import { MessageType, ResponseField, Tokens } from "../common/types";
 import { SigninUserDto } from "../users/dto/signin-user.dto";
 import { AuthRepository } from "./auth.repository";
 import { UtilsService } from "../common/utils/utils.service";
+import { Users } from "../../generated/prisma";
+import { RoleValue } from "@prisma/client";
+import { UpdateProfileDto } from "../users/dto/update-profile.dto";
+import { ForgotPasswordDto } from "../users/dto/forgot-password.dto";
+import { ResetPasswordDto } from "../users/dto/reset-password.dto";
+import * as otpGenerator from "otp-generator";
 
 @Injectable()
 export class AuthService {
@@ -50,6 +57,46 @@ export class AuthService {
       refreshToken,
     };
   }
+
+  async register(
+    createUserDto: CreateUserDto,
+    @Req() req: Request
+  ): Promise<MessageType> {
+    const candidate = await this.authRepository.findUserByEmail(
+      createUserDto.email
+    );
+    if (candidate) {
+      throw new ConflictException("Email already exists");
+    }
+    if (createUserDto.role === RoleValue.SUPERADMIN) {
+      throw new BadRequestException("No one can create SUPERADMIN");
+    }
+    if (!createUserDto.role) {
+      throw new BadRequestException("Role is required for registration");
+    }
+    if (createUserDto.role === RoleValue.USER) {
+      throw new BadRequestException("Use /signup for USER registration");
+    }
+
+    const creatorRole = (req as any).user?.role;
+    if (
+      createUserDto.role === RoleValue.ADMIN &&
+      creatorRole !== RoleValue.SUPERADMIN
+    ) {
+      throw new ForbiddenException("Only SUPERADMIN can create ADMIN users");
+    }
+
+    const newUser = await this.authRepository.createWithRole(createUserDto);
+    try {
+      await this.mailService.registerationMail(newUser);
+    } catch (error) {
+      console.log(error);
+      throw new ServiceUnavailableException(`While sending email error`);
+    }
+
+    return { message: `Welcome to Foodzy dear ${createUserDto.fullName}!` };
+  }
+
   async signup(createUserDto: CreateUserDto): Promise<MessageType> {
     const candidate = await this.authRepository.findUserByEmail(
       createUserDto.email
@@ -194,140 +241,142 @@ export class AuthService {
     return { message: "Your account has been successfully activated" };
   }
 
-  //   async forgotPassword(forgotPasswordDto: ForgotPasswordDto) {
-  //     const user = await this.prisma.user.findUnique({
-  //       where: { email: forgotPasswordDto.email },
-  //     });
+  async forgotPassword(forgotPasswordDto: ForgotPasswordDto) {
+    const user = await this.prisma.users.findUnique({
+      where: { email: forgotPasswordDto.email },
+    });
 
-  //     if (!user) {
-  //       throw new NotFoundException("User with this email not found");
-  //     }
+    if (!user) {
+      throw new NotFoundException("User with this email not found");
+    }
 
-  //     const otp = otpGenerator.generate(8, {
-  //       upperCaseAlphabets: false,
-  //       lowerCaseAlphabets: false,
-  //       specialChars: false,
-  //     });
+    const otp = otpGenerator.generate(4, {
+      upperCaseAlphabets: false,
+      lowerCaseAlphabets: false,
+      specialChars: false,
+    });
 
-  //     await this.prisma.user.update({
-  //       where: { id: user.id },
-  //       data: { password_token: otp },
-  //     });
+    await this.prisma.users.update({
+      where: { id: user.id },
+      data: { passwordToken: otp },
+    });
 
-  //     await this.mailService.sendResetPasswordEmail(user.email, otp);
+    await this.mailService.sendResetPasswordEmail(user.email, otp);
 
-  //     return { message: "Reset password OTP sent to your email" };
-  //   }
-  //   async resetPassword(userId: number, resetPasswordDto: ResetPasswordDto) {
-  //     const { oldPassword, newPassword, confirmPassword } = resetPasswordDto;
-  //     if (oldPassword === newPassword) {
-  //       throw new BadRequestException(
-  //         "New password must be different from the old password"
-  //       );
-  //     }
+    return { message: "Reset password OTP sent to your email" };
+  }
+  async resetPassword(userId: number, resetPasswordDto: ResetPasswordDto) {
+    const { oldPassword, newPassword, confirmPassword } = resetPasswordDto;
+    if (oldPassword === newPassword) {
+      throw new BadRequestException(
+        "New password must be different from the old password"
+      );
+    }
 
-  //     if (newPassword !== confirmPassword) {
-  //       throw new BadRequestException("New passwords do not match");
-  //     }
-  //     const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (newPassword !== confirmPassword) {
+      throw new BadRequestException("New passwords do not match");
+    }
+    const user = await this.prisma.users.findUnique({ where: { id: userId } });
 
-  //     if (!user) {
-  //       throw new NotFoundException("User not found");
-  //     }
-  //     const isOldPasswordCorrect = await bcrypt.compare(
-  //       oldPassword,
-  //       user.password
-  //     );
-  //     if (!isOldPasswordCorrect) {
-  //       throw new BadRequestException("Old password is incorrect");
-  //     }
-  //     const hashedNewPassword = await bcrypt.hash(newPassword, 7);
+    if (!user) {
+      throw new NotFoundException("User not found");
+    }
+    const isOldPasswordCorrect = await bcrypt.compare(
+      oldPassword,
+      user.password
+    );
+    if (!isOldPasswordCorrect) {
+      throw new BadRequestException("Old password is incorrect");
+    }
+    const hashedNewPassword = await bcrypt.hash(newPassword, 7);
 
-  //     await this.prisma.user.update({
-  //       where: { id: user.id },
-  //       data: {
-  //         password: hashedNewPassword,
-  //       },
-  //     });
+    await this.prisma.users.update({
+      where: { id: user.id },
+      data: {
+        password: hashedNewPassword,
+      },
+    });
 
-  //     return { message: "Password updated successfully" };
-  //   }
-  //   async resetForgotPassword(
-  //     otp_code: string,
-  //     password: string,
-  //     confirmPassword: string
-  //   ) {
-  //     const user = await this.prisma.user.findFirst({
-  //       where: { password_token: otp_code },
-  //     });
+    return { message: "Password updated successfully" };
+  }
+  async resetForgotPassword(
+    otp_code: string,
+    password: string,
+    confirmPassword: string
+  ) {
+    const user = await this.prisma.users.findFirst({
+      where: { passwordToken: otp_code },
+    });
 
-  //     if (!user) {
-  //       throw new NotFoundException("User not found");
-  //     }
-  //     console.log(`User`, user);
-  //     console.log(`Password:`, user.password);
+    if (!user) {
+      throw new NotFoundException("User not found");
+    }
+    console.log(`User`, user);
+    console.log(`Password:`, user.password);
 
-  //     if (password !== confirmPassword) {
-  //       throw new BadRequestException("Passwords do not match");
-  //     }
+    if (password !== confirmPassword) {
+      throw new BadRequestException("Passwords do not match");
+    }
 
-  //     const isSame = await bcrypt.compare(password, user.password);
-  //     if (isSame) {
-  //       throw new BadRequestException(
-  //         "New password must be different from the old one"
-  //       );
-  //     }
+    const isSame = await bcrypt.compare(password, user.password);
+    if (isSame) {
+      throw new BadRequestException(
+        "New password must be different from the old one"
+      );
+    }
 
-  //     const hashpassword = await bcrypt.hash(password, 10);
+    const hashpassword = await bcrypt.hash(password, 10);
 
-  //     user.password = hashpassword;
+    user.password = hashpassword;
 
-  //     const user1 = await this.prisma.user.update({
-  //       where: { id: user.id },
-  //       data: {
-  //         password: hashpassword,
-  //         password_token: null,
-  //       },
-  //     });
-  //     console.log(user1);
+    const user1 = await this.prisma.users.update({
+      where: { id: user.id },
+      data: {
+        password: hashpassword,
+        passwordToken: null,
+      },
+    });
+    console.log(user1);
 
-  //     return { message: "Password reset successfully" };
-  //   }
+    return { message: "Password reset successfully" };
+  }
 
-  //   async getMe(userId: number) {
-  //     const user = await this.prisma.user.findUnique({
-  //       where: { id: userId },
-  //       select: {
-  //         fullName: true,
-  //         email: true,
-  //       },
-  //     });
+  async getMe(userId: number) {
+    const user = await this.prisma.users.findUnique({
+      where: { id: userId },
+      select: {
+        fullName: true,
+        email: true,
+        phone: true,
+        addresses: true,
+      },
+    });
 
-  //     if (!user) {
-  //       throw new NotFoundException("Foydalanuvchi topilmadi");
-  //     }
+    if (!user) {
+      throw new NotFoundException("Foydalanuvchi topilmadi");
+    }
 
-  //     return user;
-  //   }
+    return user;
+  }
 
-  //   async updateMe(userId: number, updateMeDto: UpdateMeDto) {
-  //     const user = await this.prisma.user.findUnique({ where: { id: userId } });
+  async updateMe(userId: number, updateMeDto: UpdateProfileDto) {
+    const user = await this.prisma.users.findUnique({ where: { id: userId } });
 
-  //     if (!user) {
-  //       throw new NotFoundException("User not found");
-  //     }
+    if (!user) {
+      throw new NotFoundException("User not found");
+    }
 
-  //     const updatedUser = await this.prisma.user.update({
-  //       where: { id: userId },
-  //       data: updateMeDto,
-  //     });
+    const updatedUser = await this.prisma.users.update({
+      where: { id: userId },
+      data: updateMeDto,
+    });
 
-  //     return {
-  //       message: "Profile updated successfully",
-  //       user: {
-  //         fullName: updatedUser.fullName,
-  //         email: updatedUser.email,
-  //       },
-  //     };
-  //   }
+    return {
+      message: "Profile updated successfully",
+      user: {
+        fullName: updatedUser.fullName,
+        email: updatedUser.email,
+      },
+    };
+  }
 }

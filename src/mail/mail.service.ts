@@ -30,4 +30,14 @@ export class MailService {
       },
     });
   }
+  async registerationMail(user: Users) {
+    await this.mailerService.sendMail({
+      to: user.email,
+      subject: "Happy to see you at FOODZY!",
+      template: "./registerMail",
+      context: {
+        fullName: user.fullName,
+      },
+    });
+  }
 }
